@@ -65,10 +65,12 @@ export const store = configureStore({
 })
 
 // highlight-start
+// Get the type of our store variable
+export type AppStore = typeof store
 // Infer the `RootState` and `AppDispatch` types from the store itself
-export type RootState = ReturnType<typeof store.getState>
+export type RootState = ReturnType<AppStore['getState']>
 // Inferred type: {posts: PostsState, comments: CommentsState, users: UsersState}
-export type AppDispatch = typeof store.dispatch
+export type AppDispatch = AppStore['dispatch']
 // highlight-end
 ```
 
@@ -279,6 +281,12 @@ export const exampleMiddleware: Middleware<
   const state = storeApi.getState() // correctly typed as RootState
 }
 ```
+
+:::caution
+
+If you are using `typescript-eslint`, the `@typescript-eslint/ban-types` rule might report an error if you use `{}` for the dispatch value. The recommended changes it makes are incorrect and will break your Redux store types, you should disable the rule for this line and keep using `{}`.
+
+:::
 
 The dispatch generic should likely only be needed if you are dispatching additional thunks within the middleware.
 
@@ -626,7 +634,38 @@ const fetchUserById = createAsyncThunk<
 
 ### Typing `createEntityAdapter`
 
-Typing `createEntityAdapter` only requires you to specify the entity type as the single generic argument. This typically looks like:
+Usage of `createEntityAdapter` with Typescript varies based on whether your entities are normalized by an `id` property, or whether a custom `selectId` is needed.
+
+If your entities are normalized by an `id` property, `createEntityAdapter` only requires you to specify the entity type as the single generic argument. For example:
+
+```ts
+interface Book {
+  id: number
+  title: string
+}
+
+// no selectId needed here, as the entity has an `id` property we can default to
+// highlight-next-line
+const booksAdapter = createEntityAdapter<Book>({
+  sortComparer: (a, b) => a.title.localeCompare(b.title)
+})
+
+const booksSlice = createSlice({
+  name: 'books',
+  // highlight-start
+  // The type of the state is inferred here
+  initialState: booksAdapter.getInitialState(),
+  // highlight-end
+  reducers: {
+    bookAdded: booksAdapter.addOne,
+    booksReceived(state, action: PayloadAction<{ books: Book[] }>) {
+      booksAdapter.setAll(state, action.payload.books)
+    }
+  }
+})
+```
+
+On the other hand, if the entity needs to be normalized by a different property, we instead recommend passing a custom `selectId` function and annotating there. This allows proper inference of the ID's type, instead of having to provide it manually.
 
 ```ts
 interface Book {
@@ -635,8 +674,8 @@ interface Book {
   // ...
 }
 
-// highlight-next-line
 const booksAdapter = createEntityAdapter({
+  // highlight-next-line
   selectId: (book: Book) => book.bookId,
   sortComparer: (a, b) => a.title.localeCompare(b.title)
 })
